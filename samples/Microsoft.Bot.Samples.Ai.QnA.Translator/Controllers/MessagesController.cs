@@ -23,23 +23,27 @@ namespace Microsoft.Bot.Samples.Ai.QnA.Controllers
         BotFrameworkAdapter _adapter;
 
         //supported langauges and locales
-        private static readonly string[] _supportedLanguages = new string[] { "fr", "en" };
+        private static readonly string[] _supportedLanguages = new string[] { "en", "fr" };
         private static readonly string[] _supportedLocales = new string[] { "fr-fr", "en-us" };
+        private static string currentLanguage = null;
+        private static string currentLocale = null;
+
 
         public MessagesController(IConfiguration configuration)
         {
             var qnaMiddlewareOptions = new QnAMakerMiddlewareOptions
             {
                 // add subscription key and knowledge base id
-                SubscriptionKey = "xxxxxx",
-                KnowledgeBaseId = "xxxxxx"
+                SubscriptionKey = "ff9de8cc5fc94e759ea6441fa7311a2f",
+                KnowledgeBaseId = "b7137e1b-5a5b-43f2-870f-56aa2965dff1"
             };
 
 
             var bot = new Builder.Bot(new BotFrameworkAdapter(configuration))
                 .Use(new BotStateManager(new FileStorage(System.IO.Path.GetTempPath()))) //store user state in a temp directory
-                .Use(new TranslationMiddleware(new string[] { "en" }, "xxxxxx", "", GetActiveLanguage, SetActiveLanguage))
+                .Use(new TranslationMiddleware(new string[] { "en" }, "e1046bee4d8d4657984a584c876302e5", "", GetActiveLanguage, SetActiveLanguage))
                 .Use(new LocaleConverterMiddleware(GetActiveLocale, SetActiveLocale, "en-us", new LocaleConverter()))
+                //LocaleConverter and Translation middleware use default values for source language and from locale
                 // add QnA middleware 
                 .Use(new QnAMakerMiddleware(qnaMiddlewareOptions, _httpClient));
 
@@ -71,6 +75,15 @@ namespace Microsoft.Bot.Samples.Ai.QnA.Controllers
             {
                 return this.Unauthorized();
             }
+        }
+
+        //Change language and locale
+        [HttpGet]
+        public IActionResult Get(string lang, string locale)
+        {
+            currentLanguage = lang;
+            currentLocale = locale;
+            return new ObjectResult("Success!");
         }
 
         private void SetLanguage(IBotContext context, string language) => context.State.User[@"Microsoft.API.translateTo"] = language;
@@ -107,6 +120,14 @@ namespace Microsoft.Bot.Samples.Ai.QnA.Controllers
         }
         protected string GetActiveLanguage(IBotContext context)
         {
+            if (currentLanguage != null)
+            {
+                //user has specified a different language so update the bot state
+                if (currentLanguage != (string)context.State.User[@"Microsoft.API.translateTo"])
+                {
+                    SetLanguage(context, currentLanguage);
+                }
+            }
             if (context.Request.Type == ActivityTypes.Message
                 && context.State.User.ContainsKey(@"Microsoft.API.translateTo"))
             {
@@ -145,6 +166,14 @@ namespace Microsoft.Bot.Samples.Ai.QnA.Controllers
         }
         protected string GetActiveLocale(IBotContext context)
         {
+            if (currentLocale != null)
+            {
+                //the user has specified a different locale so update the bot state
+                if (currentLocale != (string)context.State.User[@"LocaleConverterMiddleware.fromLocale"])
+                {
+                    SetLocale(context, currentLocale);
+                }
+            }
             if (context.Request.Type == ActivityTypes.Message
                 && context.State.User.ContainsKey(@"LocaleConverterMiddleware.fromLocale"))
             {

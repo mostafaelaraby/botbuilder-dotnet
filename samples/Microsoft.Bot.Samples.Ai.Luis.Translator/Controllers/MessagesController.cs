@@ -31,15 +31,17 @@ namespace Microsoft.Bot.Samples.Ai.Luis.Translator
 
         private static readonly string[] _supportedLanguages = new string[] { "fr", "en" };
         private static readonly string[] _supportedLocales = new string[] { "fr-fr", "en-us" };
+        private static string currentLanguage = null;
+        private static string currentLocale = null;
 
         public MessagesController(IConfiguration configuration)
         {
             var bot = new Builder.Bot(new BotFrameworkAdapter(configuration))
                 .Use(new BotStateManager(new FileStorage(System.IO.Path.GetTempPath()))) //store user state in a temp directory
-                .Use(new TranslationMiddleware(new string[] { "en" }, "xxxxxx", "", GetActiveLanguage, SetActiveLanguage))
+                .Use(new TranslationMiddleware(new string[] { "en" }, "e1046bee4d8d4657984a584c876302e5", "", GetActiveLanguage, SetActiveLanguage))
                 .Use(new LocaleConverterMiddleware(GetActiveLocale, SetActiveLocale, "en-us", new LocaleConverter()))
                 // add QnA middleware 
-                .Use(new LuisRecognizerMiddleware("xxxxxx", "xxxxxx"));
+                .Use(new LuisRecognizerMiddleware("ed90097b-c4f0-4f77-a852-254af1ba3ef5", "66c601ab9d7040cf830ac6f5f10dd20e"));
             
           
             
@@ -83,6 +85,15 @@ namespace Microsoft.Bot.Samples.Ai.Luis.Translator
             }
         }
 
+        //Change language and locale
+        [HttpGet]
+        public IActionResult Get(string lang, string locale)
+        {
+            currentLanguage = lang;
+            currentLocale = locale;
+            return new ObjectResult("Success!");
+        }
+
         private void SetLanguage(IBotContext context, string language) => context.State.User[@"Microsoft.API.translateTo"] = language;
         private void SetLocale(IBotContext context, string locale) => context.State.User[@"LocaleConverterMiddleware.fromLocale"] = locale;
 
@@ -117,6 +128,14 @@ namespace Microsoft.Bot.Samples.Ai.Luis.Translator
         }
         protected string GetActiveLanguage(IBotContext context)
         {
+            if (currentLanguage != null)
+            {
+                //user has specified a different language so update the bot state
+                if (currentLanguage != (string)context.State.User[@"Microsoft.API.translateTo"])
+                {
+                    SetLanguage(context, currentLanguage);
+                }
+            }
             if (context.Request.Type == ActivityTypes.Message
                 && context.State.User.ContainsKey(@"Microsoft.API.translateTo"))
             {
@@ -155,6 +174,14 @@ namespace Microsoft.Bot.Samples.Ai.Luis.Translator
         }
         protected string GetActiveLocale(IBotContext context)
         {
+            if (currentLocale != null)
+            {
+                //the user has specified a different locale so update the bot state
+                if (currentLocale != (string)context.State.User[@"LocaleConverterMiddleware.fromLocale"])
+                {
+                    SetLocale(context, currentLocale);
+                }
+            }
             if (context.Request.Type == ActivityTypes.Message
                 && context.State.User.ContainsKey(@"LocaleConverterMiddleware.fromLocale"))
             {
