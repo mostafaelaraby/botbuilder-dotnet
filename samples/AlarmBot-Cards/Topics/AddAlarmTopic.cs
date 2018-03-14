@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AlarmBot.Models;
-using AlarmBot.TopicViews;
+using AlarmBot.Responses;
 using Microsoft.Bot.Builder;
+using Microsoft.Bot.Builder.Core.Extensions;
 using Microsoft.Bot.Schema;
 
 namespace AlarmBot.Topics
@@ -62,13 +63,14 @@ namespace AlarmBot.Topics
         /// <returns></returns>
         public async Task<bool> StartTopic(IBotContext context)
         {
-            var times = context.TopIntent?.Entities.Where(entity => entity.GroupName == "AlarmTime")
+            var recognizedIntents = context.Get<IRecognizedIntents>();
+            var times = recognizedIntents.TopIntent?.Entities.Where(entity => entity.GroupName == "AlarmTime")
                     .Select(entity => DateTimeOffset.Parse(entity.ValueAs<string>()));
 
             this.Alarm = new Alarm()
             {
                 // initialize from intent entities
-                Title = context.TopIntent?.Entities.Where(entity => entity.GroupName == "AlarmTitle")
+                Title = recognizedIntents.TopIntent?.Entities.Where(entity => entity.GroupName == "AlarmTitle")
                     .Select(entity => entity.ValueAs<string>()).FirstOrDefault(),
 
                 // initialize from intent entities
@@ -81,7 +83,7 @@ namespace AlarmBot.Topics
                 Alarm.Time = new DateTimeOffset(defaultTime.Year, defaultTime.Month, defaultTime.Day, defaultTime.Hour, 0, 0, DateTimeOffset.Now.Offset);
             }
             this.TopicState = TopicStates.AddingCard;
-            context.ReplyWith(AddAlarmTopicView.STARTTOPIC, this.Alarm);
+            AddAlarmTopicResponses.ReplyWithStartTopic(context, this.Alarm);
             return true;
         }
 
@@ -93,10 +95,11 @@ namespace AlarmBot.Topics
         /// <returns></returns>
         public async Task<bool> ContinueTopic(IBotContext context)
         {
+            var recognizedIntents = context.Get<IRecognizedIntents>();
             // for messages
             if (context.Request.Type == ActivityTypes.Message)
             {
-                switch (context.TopIntent?.Name)
+                switch (recognizedIntents.TopIntent?.Name)
                 {
                     case "showAlarms":
                         // allow show alarm to interrupt, but it's one turn, so we show the data without changing the topic
@@ -105,12 +108,12 @@ namespace AlarmBot.Topics
 
                     case "help":
                         // show contextual help 
-                        context.ReplyWith(AddAlarmTopicView.HELP, this.Alarm);
+                        AddAlarmTopicResponses.ReplyWithHelp(context, this.Alarm);
                         return true;
 
                     case "cancel":
                         // prompt to cancel
-                        context.ReplyWith(AddAlarmTopicView.CANCELPROMPT, this.Alarm);
+                        AddAlarmTopicResponses.ReplyWithCancelPrompt(context, this.Alarm);
                         this.TopicState = TopicStates.CancelConfirmation;
                         return true;
 
@@ -124,8 +127,10 @@ namespace AlarmBot.Topics
         private async Task<bool> ProcessTopicState(IBotContext context)
         {
             string utterance = (((Activity)context.Request).Text ?? "").Trim();
+            var userState = context.GetUserState<UserData>();
+            // var userState = UserState<UserData>.Get(context);
 
-            // we ar eusing TopicState to remember what we last asked
+            // we are using TopicState to remember what we last asked
             switch (this.TopicState)
             {
                 case TopicStates.AddingCard:
@@ -141,14 +146,12 @@ namespace AlarmBot.Topics
                                     if (DateTimeOffset.TryParse((string)payload.Time, out DateTimeOffset time))
                                     {
                                         this.Alarm.Time = new DateTimeOffset(date.Year, date.Month, date.Day, time.Hour, time.Minute, time.Second, date.Offset);
-                                        var alarms = (List<Alarm>)context.State.User[UserProperties.ALARMS];
-                                        if (alarms == null)
+                                        if (userState.Alarms == null)
                                         {
-                                            alarms = new List<Alarm>();
-                                            context.State.User[UserProperties.ALARMS] = alarms;
+                                            userState.Alarms = new List<Alarm>();
                                         }
-                                        alarms.Add(this.Alarm);
-                                        context.ReplyWith(AddAlarmTopicView.ADDEDALARM, this.Alarm);
+                                        userState.Alarms.Add(this.Alarm);
+                                        AddAlarmTopicResponses.ReplyWithAddedAlarm(context, this.Alarm);
                                         // end topic
                                         return false;
                                     }
@@ -156,7 +159,7 @@ namespace AlarmBot.Topics
                             }
                             else if (payload.Action == "Cancel")
                             {
-                                context.ReplyWith(AddAlarmTopicView.TOPICCANCELED, this.Alarm);
+                                AddAlarmTopicResponses.ReplyWithTopicCanceled(context, this.Alarm);
                                 // End current topic
                                 return false;
                             }
@@ -168,11 +171,11 @@ namespace AlarmBot.Topics
                     {
 
                         dynamic payload = ((Activity)context.Request).Value;
-                        switch (payload.Action)
+                        switch ((string)payload.Action)
                         {
                             case "Yes":
                                 {
-                                    context.ReplyWith(AddAlarmTopicView.TOPICCANCELED, this.Alarm);
+                                    AddAlarmTopicResponses.ReplyWithTopicCanceled(context, this.Alarm);
                                     // End current topic
                                     return false;
                                 }
@@ -183,7 +186,7 @@ namespace AlarmBot.Topics
                                 }
                             default:
                                 {
-                                    context.ReplyWith(AddAlarmTopicView.CANCELREPROMPT, this.Alarm);
+                                    AddAlarmTopicResponses.ReplyWithCancelReprompt(context, this.Alarm);
                                     return true;
                                 }
                         }
@@ -203,7 +206,7 @@ namespace AlarmBot.Topics
         {
             // simply prompt again based on our state
             this.TopicState = TopicStates.AddingCard;
-            context.ReplyWith(AddAlarmTopicView.STARTTOPIC, this.Alarm);
+            AddAlarmTopicResponses.ReplyWithStartTopic(context, this.Alarm);
             return Task.FromResult(true);
         }
     }
